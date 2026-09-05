@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>モンスト 3垢別スクショ自動結合ツール</title>
+  <style>
+    :root {
+      --bg-color: #f4f6f8;
+      --card-bg: #ffffff;
+      --primary-color: #007aff;
+      --primary-hover: #0056b3;
+      --error-color: #ff3b30;
+      --text-color: #333333;
+      --border-color: #e5e5ea;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      line-height: 1.5;
+      padding: 20px 16px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 650px;
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .file-input-wrapper {
+      position: relative;
+      margin-bottom: 16px;
+    }
+
+    .file-input-wrapper input[type="file"] {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      font-size: 1rem;
+      font-weight: bold;
+      text-align: center;
+      color: #ffffff;
+      background-color: var(--primary-color);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+      text-decoration: none;
+    }
+
+    .btn:active {
+      background-color: var(--primary-hover);
+    }
+
+    .status-msg {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 16px;
+      min-height: 1.35em;
+    }
+
+    .error-msg {
+      background-color: #ffe5e5;
+      color: var(--error-color);
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+      display: none;
+      word-break: break-all;
+    }
+
+    /* アカウントごとの出力エリア */
+    .result-container {
+      margin-top: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .account-card {
+      background-color: #fafafa;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .account-card h2 {
+      font-size: 1.05rem;
+      margin-bottom: 4px;
+      color: #1c1c1e;
+    }
+
+    .account-info {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 12px;
+    }
+
+    .preview-img-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      margin-bottom: 12px;
+      background-color: #eee;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+
+    .preview-img {
+      max-height: 300px;
+      width: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    .download-btn {
+      background-color: #34c759;
+    }
+
+    /* キャンバスは非表示処理 */
+    #hidden-canvas {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>モンスト 3垢別スクショ自動結合</h1>
+
+  <div class="file-input-wrapper">
+    <button type="button" class="btn">スクリーンショットを一括選択</button>
+    <input type="file" id="image-input" multiple accept="image/*">
+  </div>
+
+  <div id="status" class="status-msg">画像を選択してください（複数枚一括OK）</div>
+  <div id="error" class="error-msg"></div>
+
+  <!-- 結果表示エリア -->
+  <div id="result-area" class="result-container"></div>
+</div>
+
+<canvas id="hidden-canvas"></canvas>
+
+<script>
+  /**
+   * アカウント設定（端末サイズ・表示名・ファイル名用プレフィックス）
+   * 85行目〜96行目付近で設定変更が可能です。
+   */
+  const ACCOUNT_CONFIG = {
+    main: {
+      label: "本垢（てけ☆）",
+      fileNamePrefix: "てけ☆",
+      width: 1179,
+      height: 2556
+    },
+    sub1: {
+      label: "サブ垢（えむぱ☆）",
+      fileNamePrefix: "えむぱ☆",
+      width: 828,
+      height: 1792
+    },
+    sub2: {
+      label: "サブ垢2（しょーき？？）",
+      fileNamePrefix: "しょーき？？",
+      width: 750,
+      height: 1334
+    }
+  };
+
+  const inputEl = document.getElementById('image-input');
+  const statusEl = document.getElementById('status');
+  const errorEl = document.getElementById('error');
+  const resultArea = document.getElementById('result-area');
+  const canvas = document.getElementById('hidden-canvas');
+  const ctx = canvas.getContext('2d');
+
+  inputEl.addEventListener('change', handleFileSelect);
+
+  async function handleFileSelect(event) {
+    clearError();
+    resultArea.innerHTML = '';
+
+    const files = Array.from(event.target.files || []);
+    
+    if (files.length === 0) {
+      showError('画像を選択してください');
+      return;
+    }
+
+    statusEl.textContent = '画像を読み込んで解析中...';
+
+    try {
+      // 選択した順番を保ったまま読み込み
+      const loadedImages = await Promise.all(files.map(loadImageData));
+
+      // アカウントごとにグループ分け
+      const grouped = {
+        main: [],
+        sub1: [],
+        sub2: []
+      };
+
+      const invalidImages = [];
+
+      loadedImages.forEach(imgData => {
+        if (imgData.accountKey) {
+          grouped[imgData.accountKey].push(imgData);
+        } else {
+          invalidImages.push(`${imgData.width}x${imgData.height}`);
+        }
+      });
+
+      // 未対応サイズの画像がある場合のエラー処理
+      if (invalidImages.length > 0) {
+        showError(`対応していない画像サイズの画像が含まれています: (${invalidImages.join(', ')})`);
+        inputEl.value = '';
+        statusEl.textContent = '';
+        return;
+      }
+
+      statusEl.textContent = '画像をアカウント別に結合中...';
+
+      // 当日の年月日文字列を作成 (YYYYMMDD)
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const dateStr = `${year}${month}${day}`;
+
+      let generatedCount = 0;
+
+      // 各アカウントごとに結合画像を生成
+      for (const [key, config] of Object.entries(ACCOUNT_CONFIG)) {
+        const images = grouped[key];
+        if (images.length > 0) {
+          const dataUrl = mergeImagesHorizontal(images);
+          const fileName = `${config.fileNamePrefix}_${dateStr}.png`;
+          
+          renderAccountCard(config.label, images.length, dataUrl, fileName);
+          generatedCount++;
+        }
+      }
+
+      if (generatedCount > 0) {
+        statusEl.textContent = `合計 ${files.length} 枚の画像を判別し、${generatedCount} アカウント分の結合画像を生成しました！`;
+      } else {
+        statusEl.textContent = '処理対象の画像がありませんでした';
+      }
+
+    } catch (err) {
+      showError('画像の読み込み中にエラーが発生しました');
+      console.error(err);
+    } finally {
+      inputEl.value = '';
+    }
+  }
+
+  // 画像読み込み・アカウント判定関数
+  function loadImageData(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const width = img.naturalWidth;
+          const height = img.naturalHeight;
+
+          let accountKey = null;
+          for (const [key, config] of Object.entries(ACCOUNT_CONFIG)) {
+            if (
+              (width === config.width && height === config.height) ||
+              (width === config.height && height === config.width)
+            ) {
+              accountKey = key;
+              break;
+            }
+          }
+
+          resolve({
+            img: img,
+            width: width,
+            height: height,
+            accountKey: accountKey
+          });
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // アカウント内の画像を原寸のまま横方向に結合する関数
+  function mergeImagesHorizontal(imageDataArray) {
+    // 高さは1枚目の高さを保持、幅はすべての幅の合計
+    const height = imageDataArray[0].height;
+    const totalWidth = imageDataArray.reduce((sum, item) => sum + item.width, 0);
+
+    canvas.width = totalWidth;
+    canvas.height = height;
+
+    ctx.clearRect(0, 0, totalWidth, height);
+
+    let currentX = 0;
+    imageDataArray.forEach((item) => {
+      // 原寸のままCanvasへ描画（拡大縮小なし）
+      ctx.drawImage(item.img, currentX, 0, item.width, item.height);
+      currentX += item.width;
+    });
+
+    return canvas.toDataURL('image/png');
+  }
+
+  // アカウントごとの結果カード（プレビュー・ダウンロードボタン）を描画
+  function renderAccountCard(label, count, dataUrl, fileName) {
+    const card = document.createElement('div');
+    card.className = 'account-card';
+
+    card.innerHTML = `
+      <h2>${escapeHtml(label)}</h2>
+      <div class="account-info">枚数: ${count}枚</div>
+      <div class="preview-img-wrapper">
+        <img class="preview-img" src="${dataUrl}" alt="${escapeHtml(label)}のプレビュー">
+      </div>
+      <a class="btn download-btn" href="${dataUrl}" download="${escapeHtml(fileName)}">PNGとして保存</a>
+    `;
+
+    resultArea.appendChild(card);
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+  }
+
+  function clearError() {
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, function(m) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[m];
+    });
+  }
+</script>
+
+</body>
+</html>
