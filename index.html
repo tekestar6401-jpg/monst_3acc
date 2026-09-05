@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>モンスト3垢 スクショ自動合成ツール</title>
+  <style>
+    :root {
+      --bg-color: #f4f6f8;
+      --card-bg: #ffffff;
+      --primary-color: #007aff;
+      --primary-hover: #0056b3;
+      --error-color: #ff3b30;
+      --text-color: #333333;
+      --border-color: #e5e5ea;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      line-height: 1.5;
+      padding: 20px 16px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 600px;
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .file-input-wrapper {
+      position: relative;
+      margin-bottom: 16px;
+    }
+
+    .file-input-wrapper input[type="file"] {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      font-size: 1rem;
+      font-weight: bold;
+      text-align: center;
+      color: #ffffff;
+      background-color: var(--primary-color);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn:active {
+      background-color: var(--primary-hover);
+    }
+
+    .btn:disabled {
+      background-color: #c7c7cc;
+      cursor: not-allowed;
+    }
+
+    .status-msg {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 16px;
+      min-height: 1.35em;
+    }
+
+    .error-msg {
+      background-color: #ffe5e5;
+      color: var(--error-color);
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+      display: none;
+      word-break: break-all;
+    }
+
+    .preview-container {
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    .preview-container h2 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+      color: #666;
+    }
+
+    .preview-img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    /* キャンバスは非表示で処理 */
+    #hidden-canvas {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>モンスト 3垢スクショ合成</h1>
+
+  <div class="file-input-wrapper">
+    <button type="button" class="btn">スクリーンショットを3枚選択</button>
+    <!-- iOS Safariで確実にトリガーさせるため accept は image/* を指定 -->
+    <input type="file" id="image-input" multiple accept="image/*">
+  </div>
+
+  <div id="status" class="status-msg">画像を選択してください</div>
+  <div id="error" class="error-msg"></div>
+
+  <div id="preview-area" class="preview-container" style="display: none;">
+    <h2>合成プレビュー</h2>
+    <img id="preview-image" class="preview-img" alt="合成プレビュー">
+    <button id="download-btn" class="btn" style="background-color: #34c759;">PNGとして保存</button>
+  </div>
+</div>
+
+<canvas id="hidden-canvas"></canvas>
+
+<script>
+  /**
+   * アカウントのスクショサイズ設定
+   * 実際の端末画像に合わせてピクセル数を変更してください。
+   * (解像度スケールにより縦横が標準値と異なる場合があります)
+   */
+  const ACCOUNT_SIZES = {
+    main: { name: "本垢", width: 1179, height: 2556 },  // 例: iPhone 15
+    sub1: { name: "サブ1", width: 828, height: 1792 },  // 例: iPhone 11
+    sub2: { name: "サブ2", width: 750, height: 1334 }   // 例: iPhone SE3
+  };
+
+  const TARGET_HEIGHT = 2556; // 合成画像の基準とする縦サイズ
+
+  const inputEl = document.getElementById('image-input');
+  const statusEl = document.getElementById('status');
+  const errorEl = document.getElementById('error');
+  const previewArea = document.getElementById('preview-area');
+  const previewImg = document.getElementById('preview-image');
+  const downloadBtn = document.getElementById('download-btn');
+  const canvas = document.getElementById('hidden-canvas');
+  const ctx = canvas.getContext('2d');
+
+  let generatedDataUrl = null;
+
+  // iOS Safariのchangeイベント発火失敗・取りこぼし対策
+  inputEl.addEventListener('change', handleFileSelect);
+
+  async function handleFileSelect(event) {
+    clearError();
+    previewArea.style.display = 'none';
+    generatedDataUrl = null;
+
+    const files = Array.from(event.target.files || []);
+    
+    if (files.length === 0) {
+      statusEl.textContent = '画像を選択してください';
+      return;
+    }
+
+    if (files.length !== 3) {
+      showError(`3枚の画像を選択してください（現在 ${files.length} 枚選択中）`);
+      // inputのリセット
+      inputEl.value = '';
+      return;
+    }
+
+    statusEl.textContent = '画像を読み込んで解析中...';
+
+    try {
+      // 全画像を読み込んでサイズ・判定を取得
+      const loadedImages = await Promise.all(files.map(loadImageData));
+
+      // アカウント重複・未登録エラーの検証
+      const matchedAccounts = {};
+      
+      for (const imgData of loadedImages) {
+        if (!imgData.accountKey) {
+          showError(`対応していない画像サイズが含まれています (${imgData.width}x${imgData.height})`);
+          inputEl.value = '';
+          statusEl.textContent = '';
+          return;
+        }
+        if (matchedAccounts[imgData.accountKey]) {
+          showError(`「${ACCOUNT_SIZES[imgData.accountKey].name}」のサイズの画像が複数選択されています`);
+          inputEl.value = '';
+          statusEl.textContent = '';
+          return;
+        }
+        matchedAccounts[imgData.accountKey] = imgData;
+      }
+
+      statusEl.textContent = '画像を合成中...';
+
+      // 必ず 本垢 → サブ1 → サブ2 の順に並べ替え
+      const sortedImages = [
+        matchedAccounts.main,
+        matchedAccounts.sub1,
+        matchedAccounts.sub2
+      ];
+
+      // 合成処理実行
+      mergeImages(sortedImages);
+
+      statusEl.textContent = '合成が完了しました！';
+      previewArea.style.display = 'block';
+
+    } catch (err) {
+      showError('画像の読み込み中にエラーが発生しました');
+      console.error(err);
+    } finally {
+      // 同じファイルを再度選択してもchangeイベントが発火するようにクリア
+      inputEl.value = '';
+    }
+  }
+
+  // 画像ファイル読み込み & アカウント判別関数
+  function loadImageData(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const width = img.naturalWidth;
+          const height = img.naturalHeight;
+
+          // ACCOUNT_SIZESと照合（縦横が逆の場合も考慮）
+          let accountKey = null;
+          for (const [key, size] of Object.entries(ACCOUNT_SIZES)) {
+            if (
+              (width === size.width && height === size.height) ||
+              (width === size.height && height === size.width)
+            ) {
+              accountKey = key;
+              break;
+            }
+          }
+
+          resolve({
+            img: img,
+            width: width,
+            height: height,
+            accountKey: accountKey
+          });
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 3枚の画像を合成・隙間なく描画する関数
+  function mergeImages(imageDataArray) {
+    // 縦2556pxに合わせた場合の各画像の横幅とアスペクト比を計算
+    const calculatedScales = imageDataArray.map(data => {
+      const scale = TARGET_HEIGHT / data.height;
+      const scaledWidth = data.width * scale;
+      return {
+        img: data.img,
+        scaledWidth: scaledWidth,
+        // 隙間を防ぐためにわずかにオーバーラップ描画するための調整幅
+        ceilWidth: Math.ceil(scaledWidth)
+      };
+    });
+
+    // 最終的なキャンバス幅（端数による隙間を防ぐため切り上げで算出）
+    const totalWidth = calculatedScales.reduce((sum, item) => sum + item.ceilWidth, 0);
+
+    canvas.width = totalWidth;
+    canvas.height = TARGET_HEIGHT;
+
+    // 背景クリア
+    ctx.clearRect(0, 0, totalWidth, TARGET_HEIGHT);
+
+    // 画像の並べて描画
+    let currentX = 0;
+    calculatedScales.forEach((item) => {
+      // +1px 広く描画することで、サブピクセル計算による白線の発生（隙間）を完全に防止
+      const drawWidth = item.ceilWidth + 1;
+      
+      ctx.drawImage(
+        item.img,
+        0, 0, item.img.naturalWidth, item.img.naturalHeight,
+        currentX, 0, drawWidth, TARGET_HEIGHT
+      );
+
+      currentX += item.ceilWidth;
+    });
+
+    // PNG生成・プレビュー設定
+    generatedDataUrl = canvas.toDataURL('image/png');
+    previewImg.src = generatedDataUrl;
+    previewImg.style.display = 'inline-block';
+  }
+
+  // 保存処理（Safariのダウンロード制限に対応）
+  downloadBtn.addEventListener('click', () => {
+    if (!generatedDataUrl) return;
+
+    const link = document.createElement('a');
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+    link.download = `monst_3acc_${dateStr}.png`;
+    link.href = generatedDataUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+  }
+
+  function clearError() {
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
+  }
+</script>
+
+</body>
+</html>
