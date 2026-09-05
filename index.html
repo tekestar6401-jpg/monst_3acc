@@ -48,7 +48,7 @@
 
     .file-input-wrapper {
       position: relative;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .file-input-wrapper input[type="file"] {
@@ -58,6 +58,31 @@
       width: 100%;
       height: 100%;
       opacity: 0;
+      cursor: pointer;
+    }
+
+    /* トリミングチェックボックス用のスタイル追加 */
+    .option-wrapper {
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+
+    .option-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      color: #444;
+    }
+
+    .option-label input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--primary-color);
       cursor: pointer;
     }
 
@@ -142,6 +167,14 @@
     <input type="file" id="image-input" multiple accept="image/*">
   </div>
 
+  <!-- 追加：トリミング指定用チェックボックス -->
+  <div class="option-wrapper">
+    <label class="option-label">
+      <input type="checkbox" id="crop-checkbox">
+      <span>ホーム画面の上部をトリミングする</span>
+    </label>
+  </div>
+
   <div id="status" class="status-msg">画像を選択してください</div>
   <div id="error" class="error-msg"></div>
 
@@ -158,7 +191,6 @@
   /**
    * アカウントのスクショサイズ設定
    * 実際の端末画像に合わせてピクセル数を変更してください。
-   * (解像度スケールにより縦横が標準値と異なる場合があります)
    */
   const ACCOUNT_SIZES = {
     main: { name: "本垢", width: 1179, height: 2556 },  // 例: iPhone 15
@@ -166,9 +198,11 @@
     sub2: { name: "サブ2", width: 750, height: 1334 }   // 例: iPhone SE3
   };
 
-  const TARGET_HEIGHT = 2556; // 合成画像の基準とする縦サイズ
+  const BASE_HEIGHT = 2556; // リサイズ用の基準高さ
+  const CROP_TOP_PX = 396;  // カットする上部ピクセル数
 
   const inputEl = document.getElementById('image-input');
+  const cropCheckbox = document.getElementById('crop-checkbox');
   const statusEl = document.getElementById('status');
   const errorEl = document.getElementById('error');
   const previewArea = document.getElementById('preview-area');
@@ -196,7 +230,6 @@
 
     if (files.length !== 3) {
       showError(`3枚の画像を選択してください（現在 ${files.length} 枚選択中）`);
-      // inputのリセット
       inputEl.value = '';
       return;
     }
@@ -235,8 +268,8 @@
         matchedAccounts.sub2
       ];
 
-      // 合成処理実行
-      mergeImages(sortedImages);
+      // 合成処理実行 (チェックボックスの状態を渡す)
+      mergeImages(sortedImages, cropCheckbox.checked);
 
       statusEl.textContent = '合成が完了しました！';
       previewArea.style.display = 'block';
@@ -245,7 +278,6 @@
       showError('画像の読み込み中にエラーが発生しました');
       console.error(err);
     } finally {
-      // 同じファイルを再度選択してもchangeイベントが発火するようにクリア
       inputEl.value = '';
     }
   }
@@ -261,7 +293,6 @@
           const width = img.naturalWidth;
           const height = img.naturalHeight;
 
-          // ACCOUNT_SIZESと照合（縦横が逆の場合も考慮）
           let accountKey = null;
           for (const [key, size] of Object.entries(ACCOUNT_SIZES)) {
             if (
@@ -289,40 +320,64 @@
     });
   }
 
-  // 3枚の画像を合成・隙間なく描画する関数
-  function mergeImages(imageDataArray) {
-    // 縦2556pxに合わせた場合の各画像の横幅とアスペクト比を計算
+  // 画像の合成関数 (仕様に沿ったリサイズ → トリミング → 結合)
+  function mergeImages(imageDataArray, isCropEnabled) {
+    // 1. 各画像の基準高さ（2556px）に対する拡大比率と横幅を計算
     const calculatedScales = imageDataArray.map(data => {
-      const scale = TARGET_HEIGHT / data.height;
+      const scale = BASE_HEIGHT / data.height;
       const scaledWidth = data.width * scale;
       return {
         img: data.img,
         scaledWidth: scaledWidth,
-        // 隙間を防ぐためにわずかにオーバーラップ描画するための調整幅
-        ceilWidth: Math.ceil(scaledWidth)
+        ceilWidth: Math.ceil(scaledWidth) // 隙間防止のための切り上げ幅
       };
     });
 
-    // 最終的なキャンバス幅（端数による隙間を防ぐため切り上げで算出）
+    // 2. トリミング有無に応じて最終描画領域・Canvasの高さを設定
+    //    OFF時: 高さ 2556px (Y=0 から 全体を使用)
+    //    ON時 : 高さ 2160px (Y=396 から 2160px分を使用)
+    const renderHeight = isCropEnabled ? (BASE_HEIGHT - CROP_TOP_PX) : BASE_HEIGHT;
+    const sourceOffsetY = isCropEnabled ? CROP_TOP_PX : 0;
+
+    // キャンバス全幅を計算
     const totalWidth = calculatedScales.reduce((sum, item) => sum + item.ceilWidth, 0);
 
     canvas.width = totalWidth;
-    canvas.height = TARGET_HEIGHT;
+    canvas.height = renderHeight;
 
-    // 背景クリア
-    ctx.clearRect(0, 0, totalWidth, TARGET_HEIGHT);
+    // キャンバスクリア
+    ctx.clearRect(0, 0, totalWidth, renderHeight);
 
-    // 画像の並べて描画
+    // 3. 各画像を並べて描画
     let currentX = 0;
     calculatedScales.forEach((item) => {
-      // +1px 広く描画することで、サブピクセル計算による白線の発生（隙間）を完全に防止
-      const drawWidth = item.ceilWidth + 1;
-      
-      ctx.drawImage(
-        item.img,
-        0, 0, item.img.naturalWidth, item.img.naturalHeight,
-        currentX, 0, drawWidth, TARGET_HEIGHT
-      );
+      const drawWidth = item.ceilWidth + 1; // 白線（隙間）防止用のオーバーラップ
+
+      if (isCropEnabled) {
+        /**
+         * 【リサイズ後トリミングの計算ロジック】
+         * 一度「高さ2556px」に拡大した世界でのY=396pxの位置を、
+         * 元画像の座標系（naturalHeight）へ逆算して描画範囲（Crop）を指定します。
+         */
+        const scale = BASE_HEIGHT / item.img.naturalHeight;
+        const cropSourceY = CROP_TOP_PX / scale; // 元画像上でのトリミング開始位置
+        const cropSourceHeight = (BASE_HEIGHT - CROP_TOP_PX) / scale; // 元画像上での使用高さ
+
+        ctx.drawImage(
+          item.img,
+          0, cropSourceY,                             // 元画像の切り抜き開始位置 (X, Y)
+          item.img.naturalWidth, cropSourceHeight,    // 元画像の切り抜き範囲 (幅, 高さ)
+          currentX, 0,                                // Canvasへの描画位置 (X, Y)
+          drawWidth, renderHeight                     // Canvasへの描画サイズ (幅, 高さ)
+        );
+      } else {
+        // チェックOFF：従来通り全体を描画
+        ctx.drawImage(
+          item.img,
+          0, 0, item.img.naturalWidth, item.img.naturalHeight,
+          currentX, 0, drawWidth, BASE_HEIGHT
+        );
+      }
 
       currentX += item.ceilWidth;
     });
@@ -333,7 +388,7 @@
     previewImg.style.display = 'inline-block';
   }
 
-  // 保存処理（Safariのダウンロード制限に対応）
+  // 保存処理
   downloadBtn.addEventListener('click', () => {
     if (!generatedDataUrl) return;
 
