@@ -19,6 +19,10 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+      /* スマホでの文字青枠選択を無効化 */
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
     body {
@@ -61,13 +65,11 @@
       cursor: pointer;
     }
 
-    /* トリミング指定用チェックボックスのスタイル */
     .option-wrapper {
       margin-bottom: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
-      user-select: none;
     }
 
     .option-label {
@@ -126,7 +128,6 @@
       word-break: break-all;
     }
 
-    /* アカウントごとの出力エリア */
     .result-container {
       margin-top: 24px;
       display: flex;
@@ -151,7 +152,13 @@
     .account-info {
       font-size: 0.85rem;
       color: #666;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
+    }
+
+    .preview-img-guide {
+      font-size: 0.8rem;
+      color: #8e8e93;
+      margin-bottom: 8px;
     }
 
     .preview-img-wrapper {
@@ -168,13 +175,15 @@
       width: auto;
       display: block;
       margin: 0 auto;
+      /* 1回の長押しで保存メニューが出るように設定 */
+      -webkit-touch-callout: default !important;
+      -webkit-user-select: auto !important;
     }
 
     .download-btn {
       background-color: #34c759;
     }
 
-    /* キャンバスは非表示処理 */
     #hidden-canvas {
       display: none;
     }
@@ -190,7 +199,6 @@
     <input type="file" id="image-input" multiple accept="image/*">
   </div>
 
-  <!-- 追加：トリミング指定用チェックボックス -->
   <div class="option-wrapper">
     <label class="option-label">
       <input type="checkbox" id="crop-checkbox">
@@ -201,37 +209,33 @@
   <div id="status" class="status-msg">画像を選択してください（複数枚一括OK）</div>
   <div id="error" class="error-msg"></div>
 
-  <!-- 結果表示エリア -->
   <div id="result-area" class="result-container"></div>
 </div>
 
 <canvas id="hidden-canvas"></canvas>
 
 <script>
-  /**
-   * アカウント設定（端末サイズ・トリミング後の高さ・表示名・ファイル名用プレフィックス）
-   */
   const ACCOUNT_CONFIG = {
     main: {
       label: "本垢（てけ☆）",
       fileNamePrefix: "てけ☆",
       width: 1179,
       height: 2556,
-      croppedHeight: 2160 // 上部 396px カット
+      croppedHeight: 2160
     },
     sub1: {
       label: "サブ垢（えむぱ☆）",
       fileNamePrefix: "えむぱ☆",
       width: 828,
       height: 1792,
-      croppedHeight: 1515 // 上部 277px カット
+      croppedHeight: 1515
     },
     sub2: {
       label: "サブ垢2（しょーき？？）",
       fileNamePrefix: "しょーき？？",
       width: 750,
       height: 1334,
-      croppedHeight: 1140 // 上部 194px カット
+      croppedHeight: 1140
     }
   };
 
@@ -259,10 +263,8 @@
     statusEl.textContent = '画像を読み込んで解析中...';
 
     try {
-      // 選択した順番を保ったまま読み込み
       const loadedImages = await Promise.all(files.map(loadImageData));
 
-      // アカウントごとにグループ分け
       const grouped = {
         main: [],
         sub1: [],
@@ -279,7 +281,6 @@
         }
       });
 
-      // 未対応サイズの画像がある場合のエラー処理
       if (invalidImages.length > 0) {
         showError(`対応していない画像サイズの画像が含まれています: (${invalidImages.join(', ')})`);
         inputEl.value = '';
@@ -289,7 +290,6 @@
 
       statusEl.textContent = '画像をアカウント別に結合中...';
 
-      // 当日の年月日文字列を作成 (YYYYMMDD)
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -299,7 +299,6 @@
       let generatedCount = 0;
       const isCropEnabled = cropCheckbox.checked;
 
-      // 各アカウントごとに結合画像を生成
       for (const [key, config] of Object.entries(ACCOUNT_CONFIG)) {
         const images = grouped[key];
         if (images.length > 0) {
@@ -325,7 +324,6 @@
     }
   }
 
-  // 画像読み込み・アカウント判定関数
   function loadImageData(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -363,13 +361,9 @@
     });
   }
 
-  // アカウント内の画像を横方向に結合する関数（トリミング対応）
   function mergeImagesHorizontal(imageDataArray, config, isCropEnabled) {
-    // トリミングの有無に応じた1枚あたりの高さを取得
     const singleHeight = isCropEnabled ? config.croppedHeight : config.height;
-    // 上部カットするピクセル数（元高さ − 指定のトリミング後高さ）
     const cropTopPx = config.height - config.croppedHeight;
-
     const totalWidth = imageDataArray.reduce((sum, item) => sum + item.width, 0);
 
     canvas.width = totalWidth;
@@ -380,16 +374,14 @@
     let currentX = 0;
     imageDataArray.forEach((item) => {
       if (isCropEnabled) {
-        // チェックON: 上部をカットして描画
         ctx.drawImage(
           item.img,
-          0, cropTopPx,                   // 元画像の読み取り開始位置 (X, Y)
-          item.width, singleHeight,      // 元画像から切り出す幅・高さ
-          currentX, 0,                   // Canvas上の描画位置 (X, Y)
-          item.width, singleHeight       // Canvas上の描画幅・高さ
+          0, cropTopPx,
+          item.width, singleHeight,
+          currentX, 0,
+          item.width, singleHeight
         );
       } else {
-        // チェックOFF: 原寸のまま全体を描画
         ctx.drawImage(item.img, currentX, 0, item.width, item.height);
       }
       currentX += item.width;
@@ -398,7 +390,6 @@
     return canvas.toDataURL('image/png');
   }
 
-  // アカウントごとの結果カード（プレビュー・ダウンロードボタン）を描画
   function renderAccountCard(label, count, dataUrl, fileName) {
     const card = document.createElement('div');
     card.className = 'account-card';
@@ -406,10 +397,11 @@
     card.innerHTML = `
       <h2>${escapeHtml(label)}</h2>
       <div class="account-info">枚数: ${count}枚</div>
+      <div class="preview-img-guide">※画像を1回長押しで「"写真"に追加」できます</div>
       <div class="preview-img-wrapper">
         <img class="preview-img" src="${dataUrl}" alt="${escapeHtml(label)}のプレビュー">
       </div>
-      <a class="btn download-btn" href="${dataUrl}" download="${escapeHtml(fileName)}">PNGとして保存</a>
+      <a class="btn download-btn" href="${dataUrl}" download="${escapeHtml(fileName)}">ファイルとして保存（ダウンロード）</a>
     `;
 
     resultArea.appendChild(card);
