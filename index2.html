@@ -48,7 +48,7 @@
 
     .file-input-wrapper {
       position: relative;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .file-input-wrapper input[type="file"] {
@@ -58,6 +58,31 @@
       width: 100%;
       height: 100%;
       opacity: 0;
+      cursor: pointer;
+    }
+
+    /* トリミング指定用チェックボックスのスタイル */
+    .option-wrapper {
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+
+    .option-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      color: #444;
+    }
+
+    .option-label input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--primary-color);
       cursor: pointer;
     }
 
@@ -165,6 +190,14 @@
     <input type="file" id="image-input" multiple accept="image/*">
   </div>
 
+  <!-- 追加：トリミング指定用チェックボックス -->
+  <div class="option-wrapper">
+    <label class="option-label">
+      <input type="checkbox" id="crop-checkbox">
+      <span>ホーム画面の上部をトリミングする</span>
+    </label>
+  </div>
+
   <div id="status" class="status-msg">画像を選択してください（複数枚一括OK）</div>
   <div id="error" class="error-msg"></div>
 
@@ -176,31 +209,34 @@
 
 <script>
   /**
-   * アカウント設定（端末サイズ・表示名・ファイル名用プレフィックス）
-   * 85行目〜96行目付近で設定変更が可能です。
+   * アカウント設定（端末サイズ・トリミング後の高さ・表示名・ファイル名用プレフィックス）
    */
   const ACCOUNT_CONFIG = {
     main: {
       label: "本垢（てけ☆）",
       fileNamePrefix: "てけ☆",
       width: 1179,
-      height: 2556
+      height: 2556,
+      croppedHeight: 2160 // 上部 396px カット
     },
     sub1: {
       label: "サブ垢（えむぱ☆）",
       fileNamePrefix: "えむぱ☆",
       width: 828,
-      height: 1792
+      height: 1792,
+      croppedHeight: 1515 // 上部 277px カット
     },
     sub2: {
       label: "サブ垢2（しょーき？？）",
       fileNamePrefix: "しょーき？？",
       width: 750,
-      height: 1334
+      height: 1334,
+      croppedHeight: 1140 // 上部 194px カット
     }
   };
 
   const inputEl = document.getElementById('image-input');
+  const cropCheckbox = document.getElementById('crop-checkbox');
   const statusEl = document.getElementById('status');
   const errorEl = document.getElementById('error');
   const resultArea = document.getElementById('result-area');
@@ -261,12 +297,13 @@
       const dateStr = `${year}${month}${day}`;
 
       let generatedCount = 0;
+      const isCropEnabled = cropCheckbox.checked;
 
       // 各アカウントごとに結合画像を生成
       for (const [key, config] of Object.entries(ACCOUNT_CONFIG)) {
         const images = grouped[key];
         if (images.length > 0) {
-          const dataUrl = mergeImagesHorizontal(images);
+          const dataUrl = mergeImagesHorizontal(images, config, isCropEnabled);
           const fileName = `${config.fileNamePrefix}_${dateStr}.png`;
           
           renderAccountCard(config.label, images.length, dataUrl, fileName);
@@ -326,21 +363,35 @@
     });
   }
 
-  // アカウント内の画像を原寸のまま横方向に結合する関数
-  function mergeImagesHorizontal(imageDataArray) {
-    // 高さは1枚目の高さを保持、幅はすべての幅の合計
-    const height = imageDataArray[0].height;
+  // アカウント内の画像を横方向に結合する関数（トリミング対応）
+  function mergeImagesHorizontal(imageDataArray, config, isCropEnabled) {
+    // トリミングの有無に応じた1枚あたりの高さを取得
+    const singleHeight = isCropEnabled ? config.croppedHeight : config.height;
+    // 上部カットするピクセル数（元高さ − 指定のトリミング後高さ）
+    const cropTopPx = config.height - config.croppedHeight;
+
     const totalWidth = imageDataArray.reduce((sum, item) => sum + item.width, 0);
 
     canvas.width = totalWidth;
-    canvas.height = height;
+    canvas.height = singleHeight;
 
-    ctx.clearRect(0, 0, totalWidth, height);
+    ctx.clearRect(0, 0, totalWidth, singleHeight);
 
     let currentX = 0;
     imageDataArray.forEach((item) => {
-      // 原寸のままCanvasへ描画（拡大縮小なし）
-      ctx.drawImage(item.img, currentX, 0, item.width, item.height);
+      if (isCropEnabled) {
+        // チェックON: 上部をカットして描画
+        ctx.drawImage(
+          item.img,
+          0, cropTopPx,                   // 元画像の読み取り開始位置 (X, Y)
+          item.width, singleHeight,      // 元画像から切り出す幅・高さ
+          currentX, 0,                   // Canvas上の描画位置 (X, Y)
+          item.width, singleHeight       // Canvas上の描画幅・高さ
+        );
+      } else {
+        // チェックOFF: 原寸のまま全体を描画
+        ctx.drawImage(item.img, currentX, 0, item.width, item.height);
+      }
       currentX += item.width;
     });
 
