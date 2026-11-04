@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>モンスト 3垢別スクショ自動結合ツール</title>
+  <title>モンスト 3垢別スクショ自動結合</title>
   <style>
     :root {
       --bg-color: #f4f6f8;
@@ -110,7 +110,6 @@
       background-color: var(--primary-hover);
     }
 
-    /* 共有ボタン専用スタイル（1個目のツールと共通） */
     .share-btn {
       background-color: var(--share-color);
       margin-top: 12px;
@@ -138,7 +137,6 @@
       word-break: break-all;
     }
 
-    /* アカウントごとの出力エリア */
     .result-container {
       margin-top: 24px;
       display: flex;
@@ -193,7 +191,7 @@
   <h1>モンスト 3垢別スクショ自動結合</h1>
 
   <div class="file-input-wrapper">
-    <button type="button" class="btn">スクリーンショットを一括選択</button>
+    <button type="button" class="btn">スクリーンショットを選択</button>
     <input type="file" id="image-input" multiple accept="image/*">
   </div>
 
@@ -365,7 +363,6 @@
 
   function mergeImagesHorizontalToBlob(imageDataArray, config, isCropEnabled) {
     return new Promise((resolve) => {
-      // 共通のベース高さを設定（例: 本垢なら2556、サブ垢ならそれぞれの原寸高さ基準に拡大）
       const baseStandardHeight = config.height;
       const targetCanvasHeight = isCropEnabled ? config.croppedHeight : config.height;
 
@@ -433,10 +430,9 @@
       <div class="preview-img-wrapper">
         <img class="preview-img" src="${dataUrl}" alt="${escapeHtml(label)}のプレビュー">
       </div>
-      <button type="button" class="btn share-btn">写真を保存 / 共有する</button>
+      <button type="button" class="btn share-btn">写真を保存する</button>
     `;
 
-    // 共有ボタンのクリックイベント設定
     const shareButton = card.querySelector('.share-btn');
     shareButton.addEventListener('click', async () => {
       const file = new File([blob], fileName, { type: 'image/png' });
@@ -455,7 +451,6 @@
         }
       }
 
-      // フォールバック
       const link = document.createElement('a');
       link.download = fileName;
       link.href = dataUrl;
@@ -476,17 +471,4 @@
   }
 
   function escapeHtml(str) {
-    return str.replace(/[&<>"']/g, function(m) {
-      return {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-      }[m];
-    });
-  }
-</script>
-
-</body>
-</html>
+    return str.replace(/[&<>"']/g, function(m
