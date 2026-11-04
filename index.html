@@ -3,13 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>モンスト3垢 スクショ自動合成ツール</title>
+  <title>モンスト フリースクショ結合</title>
   <style>
     :root {
       --bg-color: #f4f6f8;
       --card-bg: #ffffff;
       --primary-color: #007aff;
       --primary-hover: #0056b3;
+      --share-color: #34c759;
+      --share-hover: #2eb04f;
       --error-color: #ff3b30;
       --text-color: #333333;
       --border-color: #e5e5ea;
@@ -19,7 +21,6 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      /* スマホでの青い文字選択を全体で防止 */
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
@@ -37,7 +38,7 @@
 
     .container {
       width: 100%;
-      max-width: 600px;
+      max-width: 650px;
       background: var(--card-bg);
       border-radius: 16px;
       padding: 24px;
@@ -102,10 +103,19 @@
       cursor: pointer;
       transition: background-color 0.2s ease;
       -webkit-tap-highlight-color: transparent;
+      text-decoration: none;
     }
 
     .btn:active {
       background-color: var(--primary-hover);
+    }
+
+    .share-btn {
+      background-color: var(--share-color);
+      margin-top: 12px;
+    }
+    .share-btn:active {
+      background-color: var(--share-hover);
     }
 
     .status-msg {
@@ -128,32 +138,36 @@
     }
 
     .preview-container {
-      margin-top: 20px;
+      margin-top: 24px;
       text-align: center;
     }
 
     .preview-container h2 {
-      font-size: 1rem;
-      margin-bottom: 8px;
-      color: #666;
+      font-size: 1.05rem;
+      margin-bottom: 4px;
+      color: #1c1c1e;
     }
 
-    .preview-img-guide {
-      font-size: 0.8rem;
-      color: #8e8e93;
+    .selected-summary {
+      font-size: 0.85rem;
+      color: #666;
       margin-bottom: 8px;
+    }
+
+    .preview-img-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      background-color: #eee;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
     }
 
     .preview-img {
-      max-width: 100%;
-      height: auto;
-      border-radius: 8px;
-      border: 1px solid var(--border-color);
-      margin-bottom: 16px;
-      display: none;
-      /* 画像の1回長押しで直接メニューが出るように指定 */
-      -webkit-touch-callout: default !important;
-      -webkit-user-select: auto !important;
+      max-height: 300px;
+      width: auto;
+      display: block;
+      margin: 0 auto;
     }
 
     #hidden-canvas {
@@ -164,10 +178,10 @@
 <body>
 
 <div class="container">
-  <h1>モンスト 3垢スクショ合成</h1>
+  <h1>モンスト フリースクショ結合</h1>
 
   <div class="file-input-wrapper">
-    <button type="button" class="btn">スクリーンショットを3枚選択</button>
+    <button type="button" class="btn">好きな写真を何枚でも一括選択</button>
     <input type="file" id="image-input" multiple accept="image/*">
   </div>
 
@@ -178,28 +192,49 @@
     </label>
   </div>
 
-  <div id="status" class="status-msg">画像を選択してください</div>
+  <div id="status" class="status-msg">画像を選択してください（何枚でもOK）</div>
   <div id="error" class="error-msg"></div>
 
   <div id="preview-area" class="preview-container" style="display: none;">
-    <h2>合成プレビュー</h2>
-    <div class="preview-img-guide">※画像を1回長押しで「写真に保存」できます</div>
-    <img id="preview-image" class="preview-img" alt="合成プレビュー">
-    <button id="download-btn" class="btn" style="background-color: #34c759;">ファイルとして保存（ダウンロード）</button>
+    <h2>結合プレビュー</h2>
+    <div id="selected-summary" class="selected-summary"></div>
+    <div class="preview-img-wrapper">
+      <img id="preview-image" class="preview-img" alt="結合プレビュー">
+    </div>
+    <button type="button" id="share-btn" class="btn share-btn">写真を保存 / 共有する</button>
   </div>
 </div>
 
 <canvas id="hidden-canvas"></canvas>
 
 <script>
-  const ACCOUNT_SIZES = {
-    main: { name: "本垢", width: 1179, height: 2556 },
-    sub1: { name: "サブ1", width: 828, height: 1792 },
-    sub2: { name: "サブ2", width: 750, height: 1334 }
+  // 各端末のサイズ・トリミング設定
+  const ACCOUNT_CONFIG = {
+    main: {
+      name: "本垢",
+      width: 1179,
+      height: 2556,
+      baseHeight: 2556,
+      croppedHeight: 2160,
+      cropTop: 396
+    },
+    sub1: {
+      name: "サブ1(えむぱ)",
+      width: 828,
+      height: 1792,
+      baseHeight: 2556, // 全体を本垢の高さ(2556)基準に統一して拡大
+      croppedHeight: 1515,
+      cropTop: 277
+    },
+    sub2: {
+      name: "サブ2(しょーき)",
+      width: 750,
+      height: 1334,
+      baseHeight: 2556, // 全体を本垢の高さ(2556)基準に統一して拡大
+      croppedHeight: 1140,
+      cropTop: 194
+    }
   };
-
-  const BASE_HEIGHT = 2556;
-  const CROP_TOP_PX = 396;
 
   const inputEl = document.getElementById('image-input');
   const cropCheckbox = document.getElementById('crop-checkbox');
@@ -207,18 +242,19 @@
   const errorEl = document.getElementById('error');
   const previewArea = document.getElementById('preview-area');
   const previewImg = document.getElementById('preview-image');
-  const downloadBtn = document.getElementById('download-btn');
+  const selectedSummary = document.getElementById('selected-summary');
+  const shareBtn = document.getElementById('share-btn');
   const canvas = document.getElementById('hidden-canvas');
   const ctx = canvas.getContext('2d');
 
-  let generatedDataUrl = null;
+  let generatedBlob = null;
 
   inputEl.addEventListener('change', handleFileSelect);
 
   async function handleFileSelect(event) {
     clearError();
     previewArea.style.display = 'none';
-    generatedDataUrl = null;
+    generatedBlob = null;
 
     const files = Array.from(event.target.files || []);
     
@@ -227,46 +263,45 @@
       return;
     }
 
-    if (files.length !== 3) {
-      showError(`3枚の画像を選択してください（現在 ${files.length} 枚選択中）`);
-      inputEl.value = '';
-      return;
-    }
-
     statusEl.textContent = '画像を読み込んで解析中...';
 
     try {
       const loadedImages = await Promise.all(files.map(loadImageData));
-      const matchedAccounts = {};
-      
-      for (const imgData of loadedImages) {
-        if (!imgData.accountKey) {
-          showError(`対応していない画像サイズが含まれています (${imgData.width}x${imgData.height})`);
-          inputEl.value = '';
-          statusEl.textContent = '';
-          return;
+
+      const invalidImages = [];
+      loadedImages.forEach(imgData => {
+        if (!imgData.config) {
+          invalidImages.push(`${imgData.width}x${imgData.height}`);
         }
-        if (matchedAccounts[imgData.accountKey]) {
-          showError(`「${ACCOUNT_SIZES[imgData.accountKey].name}」のサイズの画像が複数選択されています`);
-          inputEl.value = '';
-          statusEl.textContent = '';
-          return;
-        }
-        matchedAccounts[imgData.accountKey] = imgData;
+      });
+
+      if (invalidImages.length > 0) {
+        showError(`対応していない画像サイズの画像が含まれています: (${invalidImages.join(', ')})`);
+        inputEl.value = '';
+        statusEl.textContent = '';
+        return;
       }
 
-      statusEl.textContent = '画像を合成中...';
+      statusEl.textContent = '画像を結合中...';
 
-      const sortedImages = [
-        matchedAccounts.main,
-        matchedAccounts.sub1,
-        matchedAccounts.sub2
-      ];
+      const isCropEnabled = cropCheckbox.checked;
+      
+      generatedBlob = await mergeFreeHorizontalToBlob(loadedImages, isCropEnabled);
+      const dataUrl = URL.createObjectURL(generatedBlob);
 
-      mergeImages(sortedImages, cropCheckbox.checked);
+      const counts = {};
+      loadedImages.forEach(item => {
+        counts[item.config.name] = (counts[item.config.name] || 0) + 1;
+      });
+      const summaryText = Object.entries(counts)
+        .map(([name, count]) => `${name}: ${count}枚`)
+        .join(' ⁄ ');
 
-      statusEl.textContent = '合成が完了しました！';
+      selectedSummary.textContent = `内訳: ${summaryText} (合計 ${loadedImages.length}枚)`;
+      previewImg.src = dataUrl;
+
       previewArea.style.display = 'block';
+      statusEl.textContent = '結合が完了しました！下部のボタンから保存できます。';
 
     } catch (err) {
       showError('画像の読み込み中にエラーが発生しました');
@@ -286,13 +321,13 @@
           const width = img.naturalWidth;
           const height = img.naturalHeight;
 
-          let accountKey = null;
-          for (const [key, size] of Object.entries(ACCOUNT_SIZES)) {
+          let matchedConfig = null;
+          for (const config of Object.values(ACCOUNT_CONFIG)) {
             if (
-              (width === size.width && height === size.height) ||
-              (width === size.height && height === size.width)
+              (width === config.width && height === config.height) ||
+              (width === config.height && height === config.width)
             ) {
-              accountKey = key;
+              matchedConfig = config;
               break;
             }
           }
@@ -301,7 +336,7 @@
             img: img,
             width: width,
             height: height,
-            accountKey: accountKey
+            config: matchedConfig
           });
         };
         img.onerror = reject;
@@ -313,68 +348,101 @@
     });
   }
 
-  function mergeImages(imageDataArray, isCropEnabled) {
-    const calculatedScales = imageDataArray.map(data => {
-      const scale = BASE_HEIGHT / data.height;
-      const scaledWidth = data.width * scale;
-      return {
-        img: data.img,
-        scaledWidth: scaledWidth,
-        ceilWidth: Math.ceil(scaledWidth)
-      };
+  function mergeFreeHorizontalToBlob(imageDataArray, isCropEnabled) {
+    return new Promise((resolve) => {
+      // 1. 各画像を共通の高さ（本垢基準の2556px）に拡大したときのサイズを正確に算出
+      const processedItems = imageDataArray.map(item => {
+        const conf = item.config;
+        // すべての画像を「本垢の高さ(2556px)」を基準とした縦サイズに拡大する倍率
+        const scale = 2556 / item.height;
+        const scaledWidth = item.width * scale;
+        const ceilWidth = Math.ceil(scaledWidth);
+
+        return {
+          img: item.img,
+          naturalWidth: item.width,
+          naturalHeight: item.height,
+          ceilWidth: ceilWidth,
+          cropTopPx: conf.cropTop,
+          originalHeight: conf.height,
+          croppedHeight: conf.croppedHeight
+        };
+      });
+
+      // 2. 最終的な出力キャンバスの高さを決定
+      // トリミングONなら 2160px、OFFなら 2556px
+      const targetCanvasHeight = isCropEnabled ? 2160 : 2556;
+      const totalWidth = processedItems.reduce((sum, item) => sum + item.ceilWidth, 0);
+
+      canvas.width = totalWidth;
+      canvas.height = targetCanvasHeight;
+
+      ctx.clearRect(0, 0, totalWidth, targetCanvasHeight);
+
+      // 3. 各画像を横に並べて描画（白線防止の+1pxオーバーラップ処理付き）
+      let currentX = 0;
+      processedItems.forEach(item => {
+        const drawWidth = item.ceilWidth + 1;
+
+        if (isCropEnabled) {
+          // トリミングON：2556px基準の高さにしてから、上部トリミング分をカットして描画
+          const scale = 2556 / item.naturalHeight;
+          const sourceY = item.cropTopPx / scale;
+          const sourceHeight = (2556 - item.cropTopPx) / scale;
+
+          ctx.drawImage(
+            item.img,
+            0, sourceY,
+            item.naturalWidth, sourceHeight,
+            currentX, 0,
+            drawWidth, targetCanvasHeight
+          );
+        } else {
+          // トリミングOFF：2556pxの高さに全体をリサイズして描画
+          ctx.drawImage(
+            item.img,
+            0, 0,
+            item.naturalWidth, item.naturalHeight,
+            currentX, 0,
+            drawWidth, targetCanvasHeight
+          );
+        }
+
+        currentX += item.ceilWidth;
+      });
+
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/png');
     });
-
-    const renderHeight = isCropEnabled ? (BASE_HEIGHT - CROP_TOP_PX) : BASE_HEIGHT;
-    const totalWidth = calculatedScales.reduce((sum, item) => sum + item.ceilWidth, 0);
-
-    canvas.width = totalWidth;
-    canvas.height = renderHeight;
-
-    ctx.clearRect(0, 0, totalWidth, renderHeight);
-
-    let currentX = 0;
-    calculatedScales.forEach((item) => {
-      const drawWidth = item.ceilWidth + 1;
-
-      if (isCropEnabled) {
-        const scale = BASE_HEIGHT / item.img.naturalHeight;
-        const cropSourceY = CROP_TOP_PX / scale;
-        const cropSourceHeight = (BASE_HEIGHT - CROP_TOP_PX) / scale;
-
-        ctx.drawImage(
-          item.img,
-          0, cropSourceY,
-          item.img.naturalWidth, cropSourceHeight,
-          currentX, 0,
-          drawWidth, renderHeight
-        );
-      } else {
-        ctx.drawImage(
-          item.img,
-          0, 0, item.img.naturalWidth, item.img.naturalHeight,
-          currentX, 0, drawWidth, BASE_HEIGHT
-        );
-      }
-
-      currentX += item.ceilWidth;
-    });
-
-    generatedDataUrl = canvas.toDataURL('image/png');
-    previewImg.src = generatedDataUrl;
-    previewImg.style.display = 'inline-block';
   }
 
-  downloadBtn.addEventListener('click', () => {
-    if (!generatedDataUrl) return;
+  shareBtn.addEventListener('click', async () => {
+    if (!generatedBlob) return;
 
-    const link = document.createElement('a');
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    link.download = `monst_3acc_${dateStr}.png`;
-    link.href = generatedDataUrl;
-    document.body.appendChild(link);
+    const fileName = `monst_free_${dateStr}.png`;
+    const file = new File([generatedBlob], fileName, { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: 'モンスト結合画像',
+          text: 'スクショ合成画像'
+        });
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') console.error(err);
+        else return;
+      }
+    }
+
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = URL.createObjectURL(generatedBlob);
     link.click();
-    document.body.removeChild(link);
   });
 
   function showError(msg) {
@@ -387,6 +455,9 @@
     errorEl.style.display = 'none';
   }
 </script>
+
+</body>
+</html>
 
 </body>
 </html>
