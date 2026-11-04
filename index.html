@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>モンスト フリースクショ結合</title>
+  <title>モンスト フリースクショ自動結合</title>
   <style>
     :root {
       --bg-color: #f4f6f8;
@@ -178,10 +178,10 @@
 <body>
 
 <div class="container">
-  <h1>モンスト フリースクショ結合</h1>
+  <h1>モンスト フリースクショ自動結合</h1>
 
   <div class="file-input-wrapper">
-    <button type="button" class="btn">好きな写真を何枚でも一括選択</button>
+    <button type="button" class="btn">スクリーンショットを一括選択</button>
     <input type="file" id="image-input" multiple accept="image/*">
   </div>
 
@@ -192,7 +192,7 @@
     </label>
   </div>
 
-  <div id="status" class="status-msg">画像を選択してください（何枚でもOK）</div>
+  <div id="status" class="status-msg">画像を選択してください</div>
   <div id="error" class="error-msg"></div>
 
   <div id="preview-area" class="preview-container" style="display: none;">
@@ -201,7 +201,7 @@
     <div class="preview-img-wrapper">
       <img id="preview-image" class="preview-img" alt="結合プレビュー">
     </div>
-    <button type="button" id="share-btn" class="btn share-btn">写真を保存 / 共有する</button>
+    <button type="button" id="share-btn" class="btn share-btn">写真を保存する</button>
   </div>
 </div>
 
