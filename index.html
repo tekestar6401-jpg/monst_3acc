@@ -210,26 +210,26 @@
 <script>
   const ACCOUNT_CONFIG = {
     main: {
-      name: "本垢",
+      key: "main",
+      name: "本垢(てけ)",
       width: 1179,
       height: 2556,
-      baseHeight: 2556,
       croppedHeight: 2160,
       cropTop: 396
     },
     sub1: {
+      key: "sub1",
       name: "サブ1(えむぱ)",
       width: 828,
       height: 1792,
-      baseHeight: 2556,
       croppedHeight: 1515,
       cropTop: 277
     },
     sub2: {
+      key: "sub2",
       name: "サブ2(しょーき)",
       width: 750,
       height: 1334,
-      baseHeight: 2556,
       croppedHeight: 1140,
       cropTop: 194
     }
@@ -246,14 +246,14 @@
   const canvas = document.getElementById('hidden-canvas');
   const ctx = canvas.getContext('2d');
 
-  let generatedBlob = null;
+  let generatedDataUrl = null;
 
   inputEl.addEventListener('change', handleFileSelect);
 
   async function handleFileSelect(event) {
     clearError();
     previewArea.style.display = 'none';
-    generatedBlob = null;
+    generatedDataUrl = null;
 
     const files = Array.from(event.target.files || []);
     
@@ -265,7 +265,7 @@
     statusEl.textContent = '画像を読み込んで解析中...';
 
     try {
-      const loadedImages = await Promise.all(files.map(loadImageData));
+      let loadedImages = await Promise.all(files.map(loadImageData));
 
       const invalidImages = [];
       loadedImages.forEach(imgData => {
@@ -281,12 +281,23 @@
         return;
       }
 
+      // ★ 判定：ちょうど3枚で、かつ「main, sub1, sub2」が1枚ずつすべて揃っている場合のみ自動ソート
+      if (loadedImages.length === 3) {
+        const keys = loadedImages.map(item => item.config.key);
+        const hasAllThree = keys.includes('main') && keys.includes('sub1') && keys.includes('sub2');
+        if (hasAllThree) {
+          const sorted = [];
+          sorted.push(loadedImages.find(item => item.config.key === 'main'));
+          sorted.push(loadedImages.find(item => item.config.key === 'sub1'));
+          sorted.push(loadedImages.find(item => item.config.key === 'sub2'));
+          loadedImages = sorted;
+        }
+      }
+
       statusEl.textContent = '画像を結合中...';
 
       const isCropEnabled = cropCheckbox.checked;
-      
-      generatedBlob = await mergeFreeHorizontalToBlob(loadedImages, isCropEnabled);
-      const dataUrl = URL.createObjectURL(generatedBlob);
+      generatedDataUrl = mergeFreeHorizontal(loadedImages, isCropEnabled);
 
       const counts = {};
       loadedImages.forEach(item => {
@@ -297,7 +308,7 @@
         .join(' ⁄ ');
 
       selectedSummary.textContent = `内訳: ${summaryText} (合計 ${loadedImages.length}枚)`;
-      previewImg.src = dataUrl;
+      previewImg.src = generatedDataUrl;
 
       previewArea.style.display = 'block';
       statusEl.textContent = '結合が完了しました！下部のボタンから保存できます。';
@@ -347,93 +358,91 @@
     });
   }
 
-  function mergeFreeHorizontalToBlob(imageDataArray, isCropEnabled) {
-    return new Promise((resolve) => {
-      const processedItems = imageDataArray.map(item => {
-        const conf = item.config;
-        const scale = 2556 / item.height;
-        const scaledWidth = item.width * scale;
-        const ceilWidth = Math.ceil(scaledWidth);
+  function mergeFreeHorizontal(imageDataArray, isCropEnabled) {
+    const processedItems = imageDataArray.map(item => {
+      const conf = item.config;
+      const scale = 2556 / item.height;
+      const scaledWidth = item.width * scale;
+      const ceilWidth = Math.ceil(scaledWidth);
 
-        return {
-          img: item.img,
-          naturalWidth: item.width,
-          naturalHeight: item.height,
-          ceilWidth: ceilWidth,
-          cropTopPx: conf.cropTop,
-          originalHeight: conf.height,
-          croppedHeight: conf.croppedHeight
-        };
-      });
-
-      const targetCanvasHeight = isCropEnabled ? 2160 : 2556;
-      const totalWidth = processedItems.reduce((sum, item) => sum + item.ceilWidth, 0);
-
-      canvas.width = totalWidth;
-      canvas.height = targetCanvasHeight;
-
-      ctx.clearRect(0, 0, totalWidth, targetCanvasHeight);
-
-      let currentX = 0;
-      processedItems.forEach(item => {
-        const drawWidth = item.ceilWidth + 1;
-
-        if (isCropEnabled) {
-          const scale = 2556 / item.naturalHeight;
-          const sourceY = item.cropTopPx / scale;
-          const sourceHeight = (2556 - item.cropTopPx) / scale;
-
-          ctx.drawImage(
-            item.img,
-            0, sourceY,
-            item.naturalWidth, sourceHeight,
-            currentX, 0,
-            drawWidth, targetCanvasHeight
-          );
-        } else {
-          ctx.drawImage(
-            item.img,
-            0, 0,
-            item.naturalWidth, item.naturalHeight,
-            currentX, 0,
-            drawWidth, targetCanvasHeight
-          );
-        }
-
-        currentX += item.ceilWidth;
-      });
-
-      canvas.toBlob((blob) => {
-        resolve(blob);
-      }, 'image/png');
+      return {
+        img: item.img,
+        naturalWidth: item.width,
+        naturalHeight: item.height,
+        ceilWidth: ceilWidth,
+        cropTopPx: conf.cropTop,
+        originalHeight: conf.height,
+        croppedHeight: conf.croppedHeight
+      };
     });
+
+    const targetCanvasHeight = isCropEnabled ? 2160 : 2556;
+    const totalWidth = processedItems.reduce((sum, item) => sum + item.ceilWidth, 0);
+
+    canvas.width = totalWidth;
+    canvas.height = targetCanvasHeight;
+
+    ctx.clearRect(0, 0, totalWidth, targetCanvasHeight);
+
+    let currentX = 0;
+    processedItems.forEach(item => {
+      const drawWidth = item.ceilWidth + 1;
+
+      if (isCropEnabled) {
+        const scale = 2556 / item.naturalHeight;
+        const sourceY = item.cropTopPx / scale;
+        const sourceHeight = (2556 - item.cropTopPx) / scale;
+
+        ctx.drawImage(
+          item.img,
+          0, sourceY,
+          item.naturalWidth, sourceHeight,
+          currentX, 0,
+          drawWidth, targetCanvasHeight
+        );
+      } else {
+        ctx.drawImage(
+          item.img,
+          0, 0,
+          item.naturalWidth, item.naturalHeight,
+          currentX, 0,
+          drawWidth, targetCanvasHeight
+        );
+      }
+
+      currentX += item.ceilWidth;
+    });
+
+    return canvas.toDataURL('image/png');
   }
 
   shareBtn.addEventListener('click', async () => {
-    if (!generatedBlob) return;
+    if (!generatedDataUrl) return;
 
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
     const fileName = `monst_free_${dateStr}.png`;
-    const file = new File([generatedBlob], fileName, { type: 'image/png' });
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
+    try {
+      const res = await fetch(generatedDataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
           title: 'モンスト結合画像',
           text: 'スクショ合成画像'
         });
         return;
-      } catch (err) {
-        if (err.name !== 'AbortError') console.error(err);
-        else return;
       }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
     }
 
     const link = document.createElement('a');
     link.download = fileName;
-    link.href = URL.createObjectURL(generatedBlob);
+    link.href = generatedDataUrl;
     link.click();
   });
 
