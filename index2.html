@@ -10,6 +10,8 @@
       --card-bg: #ffffff;
       --primary-color: #007aff;
       --primary-hover: #0056b3;
+      --share-color: #34c759;
+      --share-hover: #2eb04f;
       --error-color: #ff3b30;
       --text-color: #333333;
       --border-color: #e5e5ea;
@@ -19,7 +21,6 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      /* スマホでの文字青枠選択を無効化 */
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
@@ -109,6 +110,15 @@
       background-color: var(--primary-hover);
     }
 
+    /* 共有ボタン専用スタイル（1個目のツールと共通） */
+    .share-btn {
+      background-color: var(--share-color);
+      margin-top: 12px;
+    }
+    .share-btn:active {
+      background-color: var(--share-hover);
+    }
+
     .status-msg {
       text-align: center;
       font-size: 0.9rem;
@@ -128,6 +138,7 @@
       word-break: break-all;
     }
 
+    /* アカウントごとの出力エリア */
     .result-container {
       margin-top: 24px;
       display: flex;
@@ -155,12 +166,6 @@
       margin-bottom: 8px;
     }
 
-    .preview-img-guide {
-      font-size: 0.8rem;
-      color: #8e8e93;
-      margin-bottom: 8px;
-    }
-
     .preview-img-wrapper {
       width: 100%;
       overflow-x: auto;
@@ -175,13 +180,6 @@
       width: auto;
       display: block;
       margin: 0 auto;
-      /* 1回の長押しで保存メニューが出るように設定 */
-      -webkit-touch-callout: default !important;
-      -webkit-user-select: auto !important;
-    }
-
-    .download-btn {
-      background-color: #34c759;
     }
 
     #hidden-canvas {
@@ -221,21 +219,24 @@
       fileNamePrefix: "てけ☆",
       width: 1179,
       height: 2556,
-      croppedHeight: 2160
+      croppedHeight: 2160,
+      cropTop: 396
     },
     sub1: {
       label: "サブ垢（えむぱ☆）",
       fileNamePrefix: "えむぱ☆",
       width: 828,
       height: 1792,
-      croppedHeight: 1515
+      croppedHeight: 1515,
+      cropTop: 277
     },
     sub2: {
       label: "サブ垢2（しょーき？？）",
       fileNamePrefix: "しょーき？？",
       width: 750,
       height: 1334,
-      croppedHeight: 1140
+      croppedHeight: 1140,
+      cropTop: 194
     }
   };
 
@@ -302,10 +303,11 @@
       for (const [key, config] of Object.entries(ACCOUNT_CONFIG)) {
         const images = grouped[key];
         if (images.length > 0) {
-          const dataUrl = mergeImagesHorizontal(images, config, isCropEnabled);
+          const blob = await mergeImagesHorizontalToBlob(images, config, isCropEnabled);
+          const dataUrl = URL.createObjectURL(blob);
           const fileName = `${config.fileNamePrefix}_${dateStr}.png`;
           
-          renderAccountCard(config.label, images.length, dataUrl, fileName);
+          renderAccountCard(config.label, images.length, dataUrl, blob, fileName);
           generatedCount++;
         }
       }
@@ -361,48 +363,104 @@
     });
   }
 
-  function mergeImagesHorizontal(imageDataArray, config, isCropEnabled) {
-    const singleHeight = isCropEnabled ? config.croppedHeight : config.height;
-    const cropTopPx = config.height - config.croppedHeight;
-    const totalWidth = imageDataArray.reduce((sum, item) => sum + item.width, 0);
+  function mergeImagesHorizontalToBlob(imageDataArray, config, isCropEnabled) {
+    return new Promise((resolve) => {
+      // 共通のベース高さを設定（例: 本垢なら2556、サブ垢ならそれぞれの原寸高さ基準に拡大）
+      const baseStandardHeight = config.height;
+      const targetCanvasHeight = isCropEnabled ? config.croppedHeight : config.height;
 
-    canvas.width = totalWidth;
-    canvas.height = singleHeight;
+      const processedItems = imageDataArray.map(item => {
+        const scale = baseStandardHeight / item.height;
+        const scaledWidth = item.width * scale;
+        const ceilWidth = Math.ceil(scaledWidth);
+        return {
+          img: item.img,
+          naturalWidth: item.width,
+          naturalHeight: item.height,
+          ceilWidth: ceilWidth
+        };
+      });
 
-    ctx.clearRect(0, 0, totalWidth, singleHeight);
+      const totalWidth = processedItems.reduce((sum, item) => sum + item.ceilWidth, 0);
 
-    let currentX = 0;
-    imageDataArray.forEach((item) => {
-      if (isCropEnabled) {
-        ctx.drawImage(
-          item.img,
-          0, cropTopPx,
-          item.width, singleHeight,
-          currentX, 0,
-          item.width, singleHeight
-        );
-      } else {
-        ctx.drawImage(item.img, currentX, 0, item.width, item.height);
-      }
-      currentX += item.width;
+      canvas.width = totalWidth;
+      canvas.height = targetCanvasHeight;
+
+      ctx.clearRect(0, 0, totalWidth, targetCanvasHeight);
+
+      let currentX = 0;
+      processedItems.forEach(item => {
+        const drawWidth = item.ceilWidth + 1;
+
+        if (isCropEnabled) {
+          const scale = baseStandardHeight / item.naturalHeight;
+          const sourceY = config.cropTop / scale;
+          const sourceHeight = (baseStandardHeight - config.cropTop) / scale;
+
+          ctx.drawImage(
+            item.img,
+            0, sourceY,
+            item.naturalWidth, sourceHeight,
+            currentX, 0,
+            drawWidth, targetCanvasHeight
+          );
+        } else {
+          ctx.drawImage(
+            item.img,
+            0, 0,
+            item.naturalWidth, item.naturalHeight,
+            currentX, 0,
+            drawWidth, targetCanvasHeight
+          );
+        }
+
+        currentX += item.ceilWidth;
+      });
+
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/png');
     });
-
-    return canvas.toDataURL('image/png');
   }
 
-  function renderAccountCard(label, count, dataUrl, fileName) {
+  function renderAccountCard(label, count, dataUrl, blob, fileName) {
     const card = document.createElement('div');
     card.className = 'account-card';
 
     card.innerHTML = `
       <h2>${escapeHtml(label)}</h2>
       <div class="account-info">枚数: ${count}枚</div>
-      <div class="preview-img-guide">※画像を1回長押しで「"写真"に追加」できます</div>
       <div class="preview-img-wrapper">
         <img class="preview-img" src="${dataUrl}" alt="${escapeHtml(label)}のプレビュー">
       </div>
-      <a class="btn download-btn" href="${dataUrl}" download="${escapeHtml(fileName)}">ファイルとして保存（ダウンロード）</a>
+      <button type="button" class="btn share-btn">写真を保存 / 共有する</button>
     `;
+
+    // 共有ボタンのクリックイベント設定
+    const shareButton = card.querySelector('.share-btn');
+    shareButton.addEventListener('click', async () => {
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: label,
+            text: 'モンスト結合画像'
+          });
+          return;
+        } catch (err) {
+          if (err.name !== 'AbortError') console.error(err);
+          else return;
+        }
+      }
+
+      // フォールバック
+      const link = document.createElement('a');
+      link.download = fileName;
+      link.href = dataUrl;
+      link.click();
+    });
 
     resultArea.appendChild(card);
   }
