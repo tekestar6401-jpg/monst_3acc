@@ -181,7 +181,7 @@
   <h1>モンスト フリースクショ自動結合</h1>
 
   <div class="file-input-wrapper">
-    <button type="button" class="btn">スクリーンショットを一括選択</button>
+    <button type="button" class="btn">スクリーンショットを選択</button>
     <input type="file" id="image-input" multiple accept="image/*">
   </div>
 
@@ -192,7 +192,7 @@
     </label>
   </div>
 
-  <div id="status" class="status-msg">画像を選択してください</div>
+  <div id="status" class="status-msg">画像を選択してください（何枚でもOK）</div>
   <div id="error" class="error-msg"></div>
 
   <div id="preview-area" class="preview-container" style="display: none;">
@@ -208,7 +208,6 @@
 <canvas id="hidden-canvas"></canvas>
 
 <script>
-  // 各端末のサイズ・トリミング設定
   const ACCOUNT_CONFIG = {
     main: {
       name: "本垢",
@@ -222,7 +221,7 @@
       name: "サブ1(えむぱ)",
       width: 828,
       height: 1792,
-      baseHeight: 2556, // 全体を本垢の高さ(2556)基準に統一して拡大
+      baseHeight: 2556,
       croppedHeight: 1515,
       cropTop: 277
     },
@@ -230,7 +229,7 @@
       name: "サブ2(しょーき)",
       width: 750,
       height: 1334,
-      baseHeight: 2556, // 全体を本垢の高さ(2556)基準に統一して拡大
+      baseHeight: 2556,
       croppedHeight: 1140,
       cropTop: 194
     }
@@ -350,10 +349,8 @@
 
   function mergeFreeHorizontalToBlob(imageDataArray, isCropEnabled) {
     return new Promise((resolve) => {
-      // 1. 各画像を共通の高さ（本垢基準の2556px）に拡大したときのサイズを正確に算出
       const processedItems = imageDataArray.map(item => {
         const conf = item.config;
-        // すべての画像を「本垢の高さ(2556px)」を基準とした縦サイズに拡大する倍率
         const scale = 2556 / item.height;
         const scaledWidth = item.width * scale;
         const ceilWidth = Math.ceil(scaledWidth);
@@ -369,8 +366,6 @@
         };
       });
 
-      // 2. 最終的な出力キャンバスの高さを決定
-      // トリミングONなら 2160px、OFFなら 2556px
       const targetCanvasHeight = isCropEnabled ? 2160 : 2556;
       const totalWidth = processedItems.reduce((sum, item) => sum + item.ceilWidth, 0);
 
@@ -379,13 +374,11 @@
 
       ctx.clearRect(0, 0, totalWidth, targetCanvasHeight);
 
-      // 3. 各画像を横に並べて描画（白線防止の+1pxオーバーラップ処理付き）
       let currentX = 0;
       processedItems.forEach(item => {
         const drawWidth = item.ceilWidth + 1;
 
         if (isCropEnabled) {
-          // トリミングON：2556px基準の高さにしてから、上部トリミング分をカットして描画
           const scale = 2556 / item.naturalHeight;
           const sourceY = item.cropTopPx / scale;
           const sourceHeight = (2556 - item.cropTopPx) / scale;
@@ -398,7 +391,6 @@
             drawWidth, targetCanvasHeight
           );
         } else {
-          // トリミングOFF：2556pxの高さに全体をリサイズして描画
           ctx.drawImage(
             item.img,
             0, 0,
@@ -455,9 +447,6 @@
     errorEl.style.display = 'none';
   }
 </script>
-
-</body>
-</html>
 
 </body>
 </html>
