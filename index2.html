@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>モンスト フリースクショ自動結合</title>
+  <title>モンスト 3垢別スクショ自動結合</title>
   <style>
     :root {
       --bg-color: #f4f6f8;
@@ -137,18 +137,28 @@
       word-break: break-all;
     }
 
-    .preview-container {
+    .result-container {
       margin-top: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .account-card {
+      background-color: #fafafa;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
       text-align: center;
     }
 
-    .preview-container h2 {
+    .account-card h2 {
       font-size: 1.05rem;
       margin-bottom: 4px;
       color: #1c1c1e;
     }
 
-    .selected-summary {
+    .account-info {
       font-size: 0.85rem;
       color: #666;
       margin-bottom: 8px;
@@ -157,7 +167,7 @@
     .preview-img-wrapper {
       width: 100%;
       overflow-x: auto;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       background-color: #eee;
       border-radius: 8px;
       border: 1px solid var(--border-color);
@@ -178,7 +188,7 @@
 <body>
 
 <div class="container">
-  <h1>モンスト フリースクショ自動結合</h1>
+  <h1>モンスト 3垢別スクショ自動結合</h1>
 
   <div class="file-input-wrapper">
     <button type="button" class="btn">スクリーンショットを選択</button>
@@ -192,17 +202,10 @@
     </label>
   </div>
 
-  <div id="status" class="status-msg">画像を選択してください（何枚でもOK）</div>
+  <div id="status" class="status-msg">画像を選択してください（複数枚一括OK）</div>
   <div id="error" class="error-msg"></div>
 
-  <div id="preview-area" class="preview-container" style="display: none;">
-    <h2>結合プレビュー</h2>
-    <div id="selected-summary" class="selected-summary"></div>
-    <div class="preview-img-wrapper">
-      <img id="preview-image" class="preview-img" alt="結合プレビュー">
-    </div>
-    <button type="button" id="share-btn" class="btn share-btn">写真を保存する</button>
-  </div>
+  <div id="result-area" class="result-container"></div>
 </div>
 
 <canvas id="hidden-canvas"></canvas>
@@ -210,21 +213,24 @@
 <script>
   const ACCOUNT_CONFIG = {
     main: {
-      name: "本垢",
+      label: "本垢（てけ☆）",
+      fileNamePrefix: "てけ☆",
       width: 1179,
       height: 2556,
       croppedHeight: 2160,
       cropTop: 396
     },
     sub1: {
-      name: "サブ1(えむぱ)",
+      label: "サブ垢（えむぱ☆）",
+      fileNamePrefix: "えむぱ☆",
       width: 828,
       height: 1792,
       croppedHeight: 1515,
       cropTop: 277
     },
     sub2: {
-      name: "サブ2(しょーき)",
+      label: "サブ垢2（しょーき？？）",
+      fileNamePrefix: "しょーき？？",
       width: 750,
       height: 1334,
       croppedHeight: 1140,
@@ -236,26 +242,20 @@
   const cropCheckbox = document.getElementById('crop-checkbox');
   const statusEl = document.getElementById('status');
   const errorEl = document.getElementById('error');
-  const previewArea = document.getElementById('preview-area');
-  const previewImg = document.getElementById('preview-image');
-  const selectedSummary = document.getElementById('selected-summary');
-  const shareBtn = document.getElementById('share-btn');
+  const resultArea = document.getElementById('result-area');
   const canvas = document.getElementById('hidden-canvas');
   const ctx = canvas.getContext('2d');
-
-  let generatedDataUrl = null;
 
   inputEl.addEventListener('change', handleFileSelect);
 
   async function handleFileSelect(event) {
     clearError();
-    previewArea.style.display = 'none';
-    generatedDataUrl = null;
+    resultArea.innerHTML = '';
 
     const files = Array.from(event.target.files || []);
     
     if (files.length === 0) {
-      statusEl.textContent = '画像を選択してください';
+      showError('画像を選択してください');
       return;
     }
 
@@ -264,9 +264,18 @@
     try {
       const loadedImages = await Promise.all(files.map(loadImageData));
 
+      const grouped = {
+        main: [],
+        sub1: [],
+        sub2: []
+      };
+
       const invalidImages = [];
+
       loadedImages.forEach(imgData => {
-        if (!imgData.config) {
+        if (imgData.accountKey) {
+          grouped[imgData.accountKey].push(imgData);
+        } else {
           invalidImages.push(`${imgData.width}x${imgData.height}`);
         }
       });
@@ -278,26 +287,34 @@
         return;
       }
 
-      statusEl.textContent = '画像を結合中...';
+      statusEl.textContent = '画像をアカウント別に結合中...';
 
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const dateStr = `${year}${month}${day}`;
+
+      let generatedCount = 0;
       const isCropEnabled = cropCheckbox.checked;
-      
-      // dataURL方式に戻して確実に動くように実装
-      generatedDataUrl = mergeFreeHorizontal(loadedImages, isCropEnabled);
 
-      const counts = {};
-      loadedImages.forEach(item => {
-        counts[item.config.name] = (counts[item.config.name] || 0) + 1;
-      });
-      const summaryText = Object.entries(counts)
-        .map(([name, count]) => `${name}: ${count}枚`)
-        .join(' ⁄ ');
+      for (const [key, config] of Object.entries(ACCOUNT_CONFIG)) {
+        const images = grouped[key];
+        if (images.length > 0) {
+          const blob = await mergeImagesHorizontalToBlob(images, config, isCropEnabled);
+          const dataUrl = URL.createObjectURL(blob);
+          const fileName = `${config.fileNamePrefix}_${dateStr}.png`;
+          
+          renderAccountCard(config.label, images.length, dataUrl, blob, fileName);
+          generatedCount++;
+        }
+      }
 
-      selectedSummary.textContent = `内訳: ${summaryText} (合計 ${loadedImages.length}枚)`;
-      previewImg.src = generatedDataUrl;
-
-      previewArea.style.display = 'block';
-      statusEl.textContent = '結合が完了しました！下部のボタンから保存できます。';
+      if (generatedCount > 0) {
+        statusEl.textContent = `合計 ${files.length} 枚の画像を判別し、${generatedCount} アカウント分の結合画像を生成しました！`;
+      } else {
+        statusEl.textContent = '処理対象の画像がありませんでした';
+      }
 
     } catch (err) {
       showError('画像の読み込み中にエラーが発生しました');
@@ -317,13 +334,13 @@
           const width = img.naturalWidth;
           const height = img.naturalHeight;
 
-          let matchedConfig = null;
-          for (const config of Object.values(ACCOUNT_CONFIG)) {
+          let accountKey = null;
+          for (const [key, config] of Object.entries(ACCOUNT_CONFIG)) {
             if (
               (width === config.width && height === config.height) ||
               (width === config.height && height === config.width)
             ) {
-              matchedConfig = config;
+              accountKey = key;
               break;
             }
           }
@@ -332,7 +349,7 @@
             img: img,
             width: width,
             height: height,
-            config: matchedConfig
+            accountKey: accountKey
           });
         };
         img.onerror = reject;
@@ -344,95 +361,104 @@
     });
   }
 
-  function mergeFreeHorizontal(imageDataArray, isCropEnabled) {
-    const processedItems = imageDataArray.map(item => {
-      const conf = item.config;
-      const scale = 2556 / item.height;
-      const scaledWidth = item.width * scale;
-      const ceilWidth = Math.ceil(scaledWidth);
+  function mergeImagesHorizontalToBlob(imageDataArray, config, isCropEnabled) {
+    return new Promise((resolve) => {
+      const baseStandardHeight = config.height;
+      const targetCanvasHeight = isCropEnabled ? config.croppedHeight : config.height;
 
-      return {
-        img: item.img,
-        naturalWidth: item.width,
-        naturalHeight: item.height,
-        ceilWidth: ceilWidth,
-        cropTopPx: conf.cropTop,
-        originalHeight: conf.height,
-        croppedHeight: conf.croppedHeight
-      };
+      const processedItems = imageDataArray.map(item => {
+        const scale = baseStandardHeight / item.height;
+        const scaledWidth = item.width * scale;
+        const ceilWidth = Math.ceil(scaledWidth);
+        return {
+          img: item.img,
+          naturalWidth: item.width,
+          naturalHeight: item.height,
+          ceilWidth: ceilWidth
+        };
+      });
+
+      const totalWidth = processedItems.reduce((sum, item) => sum + item.ceilWidth, 0);
+
+      canvas.width = totalWidth;
+      canvas.height = targetCanvasHeight;
+
+      ctx.clearRect(0, 0, totalWidth, targetCanvasHeight);
+
+      let currentX = 0;
+      processedItems.forEach(item => {
+        const drawWidth = item.ceilWidth + 1;
+
+        if (isCropEnabled) {
+          const scale = baseStandardHeight / item.naturalHeight;
+          const sourceY = config.cropTop / scale;
+          const sourceHeight = (baseStandardHeight - config.cropTop) / scale;
+
+          ctx.drawImage(
+            item.img,
+            0, sourceY,
+            item.naturalWidth, sourceHeight,
+            currentX, 0,
+            drawWidth, targetCanvasHeight
+          );
+        } else {
+          ctx.drawImage(
+            item.img,
+            0, 0,
+            item.naturalWidth, item.naturalHeight,
+            currentX, 0,
+            drawWidth, targetCanvasHeight
+          );
+        }
+
+        currentX += item.ceilWidth;
+      });
+
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/png');
     });
-
-    const targetCanvasHeight = isCropEnabled ? 2160 : 2556;
-    const totalWidth = processedItems.reduce((sum, item) => sum + item.ceilWidth, 0);
-
-    canvas.width = totalWidth;
-    canvas.height = targetCanvasHeight;
-
-    ctx.clearRect(0, 0, totalWidth, targetCanvasHeight);
-
-    let currentX = 0;
-    processedItems.forEach(item => {
-      const drawWidth = item.ceilWidth + 1;
-
-      if (isCropEnabled) {
-        const scale = 2556 / item.naturalHeight;
-        const sourceY = item.cropTopPx / scale;
-        const sourceHeight = (2556 - item.cropTopPx) / scale;
-
-        ctx.drawImage(
-          item.img,
-          0, sourceY,
-          item.naturalWidth, sourceHeight,
-          currentX, 0,
-          drawWidth, targetCanvasHeight
-        );
-      } else {
-        ctx.drawImage(
-          item.img,
-          0, 0,
-          item.naturalWidth, item.naturalHeight,
-          currentX, 0,
-          drawWidth, targetCanvasHeight
-        );
-      }
-
-      currentX += item.ceilWidth;
-    });
-
-    return canvas.toDataURL('image/png');
   }
 
-  shareBtn.addEventListener('click', async () => {
-    if (!generatedDataUrl) return;
+  function renderAccountCard(label, count, dataUrl, blob, fileName) {
+    const card = document.createElement('div');
+    card.className = 'account-card';
 
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const fileName = `monst_free_${dateStr}.png`;
+    card.innerHTML = `
+      <h2>${escapeHtml(label)}</h2>
+      <div class="account-info">枚数: ${count}枚</div>
+      <div class="preview-img-wrapper">
+        <img class="preview-img" src="${dataUrl}" alt="${escapeHtml(label)}のプレビュー">
+      </div>
+      <button type="button" class="btn share-btn">写真を保存する</button>
+    `;
 
-    // dataURLをBlobに変換して共有
-    try {
-      const res = await fetch(generatedDataUrl);
-      const blob = await res.blob();
+    const shareButton = card.querySelector('.share-btn');
+    shareButton.addEventListener('click', async () => {
       const file = new File([blob], fileName, { type: 'image/png' });
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: 'モンスト結合画像',
-          text: 'スクショ合成画像'
-        });
-        return;
+        try {
+          await navigator.share({
+            files: [file],
+            title: label,
+            text: 'モンスト結合画像'
+          });
+          return;
+        } catch (err) {
+          if (err.name !== 'AbortError') console.error(err);
+          else return;
+        }
       }
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-    }
 
-    // フォールバック
-    const link = document.createElement('a');
-    link.download = fileName;
-    link.href = generatedDataUrl;
-    link.click();
-  });
+      const link = document.createElement('a');
+      link.download = fileName;
+      link.href = dataUrl;
+      link.click();
+    });
+
+    resultArea.appendChild(card);
+  }
 
   function showError(msg) {
     errorEl.textContent = msg;
@@ -442,6 +468,18 @@
   function clearError() {
     errorEl.textContent = '';
     errorEl.style.display = 'none';
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, function(m) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[m];
+    });
   }
 </script>
 
