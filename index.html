@@ -281,7 +281,7 @@
         return;
       }
 
-      // ★ 判定：ちょうど3枚で、かつ「main, sub1, sub2」が1枚ずつすべて揃っている場合のみ自動ソート
+      // 3枚かつ3垢が1枚ずつ揃っている場合は自動ソート
       if (loadedImages.length === 3) {
         const keys = loadedImages.map(item => item.config.key);
         const hasAllThree = keys.includes('main') && keys.includes('sub1') && keys.includes('sub2');
@@ -359,6 +359,7 @@
   }
 
   function mergeFreeHorizontal(imageDataArray, isCropEnabled) {
+    // 1. 各画像を本垢の高さ(2556px)基準に拡大したときの幅を計算
     const processedItems = imageDataArray.map(item => {
       const conf = item.config;
       const scale = 2556 / item.height;
@@ -370,14 +371,13 @@
         naturalWidth: item.width,
         naturalHeight: item.height,
         ceilWidth: ceilWidth,
-        cropTopPx: conf.cropTop,
-        originalHeight: conf.height,
-        croppedHeight: conf.croppedHeight
+        cropTop: conf.cropTop
       };
     });
 
-    const targetCanvasHeight = isCropEnabled ? 2160 : 2556;
     const totalWidth = processedItems.reduce((sum, item) => sum + item.ceilWidth, 0);
+    // トリミングONなら 2160px、OFFなら 2556px
+    const targetCanvasHeight = isCropEnabled ? 2160 : 2556;
 
     canvas.width = totalWidth;
     canvas.height = targetCanvasHeight;
@@ -386,21 +386,19 @@
 
     let currentX = 0;
     processedItems.forEach(item => {
-      const drawWidth = item.ceilWidth + 1;
+      const drawWidth = item.ceilWidth + 1; // 白線防止の+1px
 
       if (isCropEnabled) {
-        const scale = 2556 / item.naturalHeight;
-        const sourceY = item.cropTopPx / scale;
-        const sourceHeight = (2556 - item.cropTopPx) / scale;
-
+        // トリミングON：2556pxの高さにした上で、上部(cropTop)をカットして残りの部分(2160px分)を描画
         ctx.drawImage(
           item.img,
-          0, sourceY,
-          item.naturalWidth, sourceHeight,
+          0, item.cropTop,                   // 元画像の切り取り開始Y座標（各端末固有の正しいトリミング位置）
+          item.naturalWidth, item.naturalHeight - item.cropTop, // 切り取る元の高さ
           currentX, 0,
           drawWidth, targetCanvasHeight
         );
       } else {
+        // トリミングOFF：全体をそのまま2556pxの高さにリサイズして描画
         ctx.drawImage(
           item.img,
           0, 0,
